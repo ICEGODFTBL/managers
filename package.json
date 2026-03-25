@@ -1,0 +1,15 @@
+{
+    "name": "ice-obfuscator",
+    "version": "1.0.0",
+    "description": "ICE Lua Obfuscator — Vercel",
+    "main": "obfuscator.js",
+    "engines": { "node": ">=18" },
+    "scripts": {
+        "dev": "vercel dev",
+        "deploy": "vercel --prod"
+    },
+    "devDependencies": {
+        "vercel": "latest"
+    }
+}
+
