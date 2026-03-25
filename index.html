@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICE Obfuscator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --bg:        #050505;
+        --surface:   #0a0a0a;
+        --panel:     #0f0f0f;
+        --border:    rgba(255,255,255,0.06);
+        --border-hi: rgba(180,0,0,0.5);
+        --red:       #b00000;
+        --red-dim:   #6b0000;
+        --red-glow:  rgba(176,0,0,0.18);
+        --text:      #e0e0e0;
+        --muted:     #555;
+        --mono:      'JetBrains Mono', monospace;
+        --display:   'Syne', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+        min-height: 100vh;
+        overflow-x: hidden;
+    }
+
+    /* noise grain overlay */
+    body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.35;
+    }
+
+    /* top red line */
+    body::after {
+        content: '';
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--red), transparent);
+        z-index: 100;
+    }
+
+    .wrap {
+        position: relative;
+        z-index: 1;
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 0 20px 60px;
+    }
+
+    /* ── Header ── */
+    header {
+        padding: 52px 0 36px;
+        display: flex;
+        align-items: flex-end;
+        gap: 20px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 40px;
+    }
+
+    .logo {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .logo-title {
+        font-family: var(--display);
+        font-size: 38px;
+        font-weight: 800;
+        letter-spacing: -1px;
+        color: #fff;
+        line-height: 1;
+    }
+    .logo-title span {
+        color: var(--red);
+    }
+
+    .logo-sub {
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 3px;
+        color: var(--muted);
+        text-transform: uppercase;
+    }
+
+    .header-badge {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        border-radius: 3px;
+    }
+
+    /* ── Layout ── */
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 340px;
+        gap: 16px;
+        align-items: start;
+    }
+
+    @media (max-width: 720px) {
+        .grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panels ── */
+    .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        font-size: 10px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--muted);
+    }
+
+    .panel-head .dot {
+        width: 6px; height: 6px;
+        background: var(--red);
+        border-radius: 50%;
+        flex-shrink: 0;
+        box-shadow: 0 0 6px var(--red);
+        animation: breathe 2s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+        0%,100% { opacity: 1; }
+        50%      { opacity: 0.3; }
+    }
+
+    /* ── Editors ── */
+    textarea {
+        width: 100%;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #ccc;
+        font-family: var(--mono);
+        font-size: 13px;
+        line-height: 1.6;
+        resize: none;
+        padding: 16px;
+        display: block;
+    }
+
+    #input-code  { height: 320px; }
+    #output-code { height: 280px; color: #888; }
+
+    textarea::placeholder { color: var(--muted); }
+
+    /* ── Options panel ── */
+    .options-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .opt-section {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .opt-head {
+        padding: 9px 14px;
+        font-size: 9px;
+        letter-spacing: 2.5px;
+        text-transform: uppercase;
+        color: var(--muted);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .opt-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border);
+        gap: 10px;
+    }
+    .opt-row:last-child { border-bottom: none; }
+
+    .opt-label {
+        font-size: 12px;
+        color: #bbb;
+        font-weight: 500;
+    }
+    .opt-desc {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 1px;
+    }
+
+    /* Toggle */
+    .toggle {
+        position: relative;
+        width: 38px; height: 20px;
+        flex-shrink: 0;
+        cursor: pointer;
+    }
+    .toggle input { display: none; }
+    .toggle-track {
+        position: absolute;
+        inset: 0;
+        background: #1a1a1a;
+        border: 1px solid #2a2a2a;
+        border-radius: 10px;
+        transition: background 0.2s, border-color 0.2s;
+    }
+    .toggle input:checked ~ .toggle-track {
+        background: var(--red-dim);
+        border-color: var(--red);
+    }
+    .toggle-knob {
+        position: absolute;
+        top: 3px; left: 3px;
+        width: 12px; height: 12px;
+        background: #555;
+        border-radius: 50%;
+        transition: transform 0.2s, background 0.2s;
+    }
+    .toggle input:checked ~ .toggle-track .toggle-knob {
+        transform: translateX(18px);
+        background: #fff;
+    }
+
+    /* Text inputs */
+    .field {
+        width: 100%;
+        background: #0a0a0a;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 8px 12px;
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--text);
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .field:focus { border-color: var(--red-dim); }
+    .field::placeholder { color: var(--muted); }
+
+    .field-wrap {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+    }
+    .field-wrap:last-child { border-bottom: none; }
+
+    .field-label {
+        font-size: 9px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 6px;
+    }
+
+    .hwid-reveal {
+        display: none;
+    }
+    .hwid-reveal.visible {
+        display: block;
+    }
+
+    /* ── Action button ── */
+    .btn-obf {
+        width: 100%;
+        padding: 13px;
+        background: var(--red-dim);
+        border: 1px solid var(--red);
+        border-radius: 5px;
+        color: #fff;
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+        margin-top: 2px;
+        position: relative;
+        overflow: hidden;
+    }
+    .btn-obf::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+        pointer-events: none;
+    }
+    .btn-obf:hover {
+        background: var(--red);
+        box-shadow: 0 0 24px var(--red-glow);
+    }
+    .btn-obf:active { transform: scale(0.98); }
+    .btn-obf:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    .btn-row {
+        display: flex;
+        gap: 8px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--border);
+    }
+
+    .btn-sm {
+        flex: 1;
+        padding: 8px;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 10px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: border-color 0.2s, color 0.2s;
+    }
+    .btn-sm:hover { border-color: var(--red-dim); color: #fff; }
+
+    /* ── Status bar ── */
+    .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 14px;
+        font-size: 10px;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        letter-spacing: 1px;
+    }
+    .status-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+    }
+    .status-dot.ok  { background: #2ecc71; box-shadow: 0 0 6px #2ecc71; }
+    .status-dot.err { background: var(--red); box-shadow: 0 0 6px var(--red); }
+    .status-dot.run { background: #f39c12; box-shadow: 0 0 6px #f39c12; animation: breathe 0.6s ease-in-out infinite; }
+
+    /* ── Loadstring box ── */
+    .ls-box {
+        margin-top: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        display: none;
+    }
+    .ls-box.visible { display: block; }
+
+    .ls-inner {
+        padding: 14px 16px;
+        font-size: 12px;
+        color: #777;
+        overflow-x: auto;
+        white-space: nowrap;
+        background: #080808;
+    }
+    .ls-inner span.hl { color: var(--red); }
+    .ls-inner span.str { color: #888; }
+
+    /* ── Info bar ── */
+    .info-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 24px;
+        padding: 10px 0;
+        border-top: 1px solid var(--border);
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 1px;
+    }
+
+    /* Spinner */
+    .spinner {
+        display: inline-block;
+        width: 12px; height: 12px;
+        border: 1.5px solid transparent;
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        vertical-align: middle;
+        margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Fade in */
+    @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { animation: fadeUp 0.4s ease both; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+    <header>
+        <div class="logo">
+            <div class="logo-title"><span>ICE</span> OBF</div>
+            <div class="logo-sub">Lua Obfuscator — icegod.vercel.app</div>
+        </div>
+        <div class="header-badge">v1.0</div>
+    </header>
+
+    <div class="grid">
+
+        <!-- LEFT: editor + output -->
+        <div style="display:flex;flex-direction:column;gap:16px;">
+
+            <!-- Input -->
+            <div class="panel fade-in" style="animation-delay:0.05s">
+                <div class="panel-head">
+                    <span class="dot"></span>
+                    input — paste your lua
+                </div>
+                <textarea id="input-code" spellcheck="false" placeholder="-- paste your lua script here&#10;print('hello world')"></textarea>
+                <div class="status" id="input-status">
+                    <span class="status-dot" id="input-sdot"></span>
+                    <span id="input-stext">waiting for input</span>
+                </div>
+            </div>
+
+            <!-- Output -->
+            <div class="panel fade-in" style="animation-delay:0.1s">
+                <div class="panel-head">
+                    <span class="dot"></span>
+                    output — obfuscated
+                </div>
+                <textarea id="output-code" spellcheck="false" readonly placeholder="-- obfuscated output will appear here"></textarea>
+                <div class="btn-row">
+                    <button class="btn-sm" id="btn-copy-out">copy output</button>
+                    <button class="btn-sm" id="btn-dl">download .lua</button>
+                    <button class="btn-sm" id="btn-clear">clear</button>
+                </div>
+                <div class="status" id="output-status">
+                    <span class="status-dot" id="out-sdot"></span>
+                    <span id="out-stext">no output yet</span>
+                </div>
+            </div>
+
+            <!-- Loadstring info -->
+            <div class="ls-box fade-in" id="ls-box">
+                <div class="panel-head">
+                    <span class="dot"></span>
+                    loadstring usage
+                </div>
+                <div class="ls-inner" id="ls-content"></div>
+                <div class="btn-row">
+                    <button class="btn-sm" id="btn-copy-ls">copy loadstring hint</button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT: options -->
+        <div class="options-panel fade-in" style="animation-delay:0.15s">
+
+            <!-- Obfuscate -->
+            <div class="opt-section">
+                <div class="opt-head">⚡ obfuscate</div>
+                <div style="padding:14px;">
+                    <button class="btn-obf" id="btn-obf">obfuscate</button>
+                </div>
+            </div>
+
+            <!-- Key system -->
+            <div class="opt-section" style="margin-top:2px;">
+                <div class="opt-head">🔑 key system</div>
+                <div class="opt-row">
+                    <div>
+                        <div class="opt-label">Enable Key</div>
+                        <div class="opt-desc">Require a key before executing</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="tog-key">
+                        <div class="toggle-track"><div class="toggle-knob"></div></div>
+                    </label>
+                </div>
+                <div class="hwid-reveal" id="key-reveal">
+                    <div class="field-wrap">
+                        <div class="field-label">Key value</div>
+                        <input class="field" type="text" id="key-value" placeholder="ICE-XXXX-XXXX-XXXX">
+                    </div>
+                    <div class="field-wrap" style="border-bottom:none;">
+                        <div class="field-label" style="color:#555;font-size:9px;">Usage in executor:</div>
+                        <div style="font-size:10px;color:#444;margin-top:4px;line-height:1.6;">
+                            getgenv()._ICE_KEY = "YOUR_KEY"<br>
+                            loadstring(...)()
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HWID lock -->
+            <div class="opt-section" style="margin-top:2px;">
+                <div class="opt-head">🔒 hwid lock</div>
+                <div class="opt-row">
+                    <div>
+                        <div class="opt-label">Lock to HWID</div>
+                        <div class="opt-desc">Only your UserId can run this</div>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="tog-hwid">
+                        <div class="toggle-track"><div class="toggle-knob"></div></div>
+                    </label>
+                </div>
+                <div class="hwid-reveal" id="hwid-reveal">
+                    <div class="field-wrap">
+                        <div class="field-label">Your Roblox UserId</div>
+                        <input class="field" type="text" id="hwid-value" placeholder="123456789" inputmode="numeric">
+                        <div style="font-size:9px;color:#333;margin-top:5px;">
+                            game.Players.LocalPlayer.UserId
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="opt-section" style="margin-top:2px;">
+                <div class="opt-head">📊 stats</div>
+                <div class="opt-row">
+                    <div class="opt-desc">Input size</div>
+                    <div style="font-size:11px;color:#555;" id="stat-in">—</div>
+                </div>
+                <div class="opt-row">
+                    <div class="opt-desc">Output size</div>
+                    <div style="font-size:11px;color:#555;" id="stat-out">—</div>
+                </div>
+                <div class="opt-row" style="border-bottom:none;">
+                    <div class="opt-desc">Ratio</div>
+                    <div style="font-size:11px;color:#555;" id="stat-ratio">—</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="info-bar">
+        <span>ICE Obfuscator — multi-layer VM · shuffled opcodes · XOR encrypt</span>
+        <span>icegod.vercel.app</span>
+    </div>
+
+</div>
+
+<script>
+// ── elements ──────────────────────────────────────────────────────
+const inputCode  = document.getElementById('input-code');
+const outputCode = document.getElementById('output-code');
+const btnObf     = document.getElementById('btn-obf');
+const togKey     = document.getElementById('tog-key');
+const keyReveal  = document.getElementById('key-reveal');
+const keyValue   = document.getElementById('key-value');
+const togHwid    = document.getElementById('tog-hwid');
+const hwidReveal = document.getElementById('hwid-reveal');
+const hwidValue  = document.getElementById('hwid-value');
+const btnCopyOut = document.getElementById('btn-copy-out');
+const btnDl      = document.getElementById('btn-dl');
+const btnClear   = document.getElementById('btn-clear');
+const btnCopyLs  = document.getElementById('btn-copy-ls');
+const lsBox      = document.getElementById('ls-box');
+const lsContent  = document.getElementById('ls-content');
+const inputSdot  = document.getElementById('input-sdot');
+const inputStext = document.getElementById('input-stext');
+const outSdot    = document.getElementById('out-sdot');
+const outStext   = document.getElementById('out-stext');
+const statIn     = document.getElementById('stat-in');
+const statOut    = document.getElementById('stat-out');
+const statRatio  = document.getElementById('stat-ratio');
+
+// ── toggles ───────────────────────────────────────────────────────
+togKey.addEventListener('change', () => {
+    keyReveal.classList.toggle('visible', togKey.checked);
+});
+togHwid.addEventListener('change', () => {
+    hwidReveal.classList.toggle('visible', togHwid.checked);
+});
+
+// ── input live stats ──────────────────────────────────────────────
+inputCode.addEventListener('input', () => {
+    const len = inputCode.value.length;
+    if (len === 0) {
+        setStatus(inputSdot, inputStext, '', 'waiting for input');
+        statIn.textContent = '—';
+    } else {
+        setStatus(inputSdot, inputStext, 'ok', fmt(len));
+        statIn.textContent = fmt(len);
+    }
+});
+
+function fmt(n) {
+    if (n < 1024) return n + ' B';
+    return (n/1024).toFixed(1) + ' KB';
+}
+
+function setStatus(dot, txt, type, msg) {
+    dot.className = 'status-dot' + (type ? ' ' + type : '');
+    txt.textContent = msg;
+}
+
+// ── obfuscate ─────────────────────────────────────────────────────
+btnObf.addEventListener('click', async () => {
+    const source = inputCode.value.trim();
+    if (!source) {
+        flash(inputSdot, inputStext);
+        return;
+    }
+
+    btnObf.disabled = true;
+    btnObf.innerHTML = '<span class="spinner"></span>obfuscating...';
+    setStatus(outSdot, outStext, 'run', 'working...');
+
+    const payload = {
+        source,
+        key:       togKey.checked  ? keyValue.value  : '',
+        hwid:      togHwid.checked,
+        hwidValue: togHwid.checked ? hwidValue.value : '',
+    };
+
+    try {
+        const resp = await fetch('/api/obfuscate', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+        });
+        const data = await resp.json();
+
+        if (!resp.ok || data.error) {
+            setStatus(outSdot, outStext, 'err', data.error || 'server error');
+            btnObf.disabled = false;
+            btnObf.textContent = 'obfuscate';
+            return;
+        }
+
+        outputCode.value = data.result;
+        setStatus(outSdot, outStext, 'ok', 'done — ' + fmt(data.result.length));
+        statOut.textContent   = fmt(data.result.length);
+        statRatio.textContent = (data.result.length / Math.max(source.length,1)).toFixed(1) + 'x';
+
+        // Loadstring hint
+        lsBox.classList.add('visible');
+        let hints = [];
+        if (togKey.checked && keyValue.value.trim()) {
+            hints.push(`<span class="hl">getgenv</span>()._ICE_KEY = <span class="str">"${escHtml(keyValue.value.trim())}"</span>`);
+        }
+        hints.push(`<span class="hl">loadstring</span>(<span class="hl">game</span>:<span class="hl">HttpGet</span>(<span class="str">"https://your-host.com/script.lua"</span>))()`);
+        lsContent.innerHTML = hints.join('<br>');
+
+    } catch (e) {
+        setStatus(outSdot, outStext, 'err', 'network error');
+    }
+
+    btnObf.disabled = false;
+    btnObf.textContent = 'obfuscate';
+});
+
+// ── helpers ───────────────────────────────────────────────────────
+function flash(dot, txt) {
+    dot.className = 'status-dot err';
+    txt.textContent = 'paste your code first';
+    setTimeout(() => {
+        dot.className = 'status-dot';
+        txt.textContent = 'waiting for input';
+    }, 1500);
+}
+
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function copyText(txt, btn, label) {
+    navigator.clipboard.writeText(txt).then(() => {
+        const old = btn.textContent;
+        btn.textContent = 'copied!';
+        setTimeout(() => btn.textContent = old, 1400);
+    });
+}
+
+btnCopyOut.addEventListener('click', () => copyText(outputCode.value, btnCopyOut, 'copy output'));
+btnCopyLs.addEventListener('click',  () => copyText(lsContent.textContent, btnCopyLs, 'copy loadstring hint'));
+
+btnDl.addEventListener('click', () => {
+    if (!outputCode.value) return;
+    const blob = new Blob([outputCode.value], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'obfuscated.lua';
+    a.click();
+});
+
+btnClear.addEventListener('click', () => {
+    outputCode.value = '';
+    lsBox.classList.remove('visible');
+    setStatus(outSdot, outStext, '', 'no output yet');
+    statOut.textContent = '—';
+    statRatio.textContent = '—';
+});
+</script>
+</body>
+</html>
+
